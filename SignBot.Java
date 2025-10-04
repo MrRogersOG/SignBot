@@ -3,6 +3,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import java.io.BufferedWriter;
 import java.io.FileWriter;
@@ -16,7 +17,18 @@ public class SignBot {
 
     private final MinecraftClient client;
     private final String logFilePath = "signbot-log.txt";
+
     private boolean scanningEnabled = false;
+    private boolean destroyEnabled = false;
+    private boolean scanPaused = false;
+    private boolean debugEnabled = false;
+
+    private boolean scanWasPressed = false;
+    private boolean destroyWasPressed = false;
+    private boolean skipWasPressed = false;
+    private boolean pauseWasPressed = false;
+    private boolean debugWasPressed = false;
+
     private final List<BlockPos> signQueue = new ArrayList<>();
 
     private int totalSigns = 0;
@@ -28,11 +40,51 @@ public class SignBot {
         this.client = client;
     }
 
-    // Toggle scanning on/off
-    public void toggleScanning() {
-        scanningEnabled = !scanningEnabled;
-        sendChat("[SignBot] Scanning " + (scanningEnabled ? "enabled" : "paused"));
-        if (scanningEnabled) scanSigns();
+    // Handle all keybinds with debounce logic
+    public void handleInput(Keybind scanKey, Keybind destroyKey, Keybind skipKey, Keybind pauseKey, Keybind debugKey) {
+        if (!scanWasPressed && scanKey.isPressed()) {
+            scanningEnabled = !scanningEnabled;
+            sendChat("[SignBot] Scanning " + (scanningEnabled ? "enabled" : "disabled"));
+            if (scanningEnabled) scanSigns();
+        }
+        scanWasPressed = scanKey.isPressed();
+
+        if (!destroyWasPressed && destroyKey.isPressed()) {
+            destroyEnabled = !destroyEnabled;
+            sendChat("[SignBot] Auto-destroy " + (destroyEnabled ? "enabled" : "disabled"));
+        }
+        destroyWasPressed = destroyKey.isPressed();
+
+        if (!skipWasPressed && skipKey.isPressed()) {
+            dispatchNextSign();
+        }
+        skipWasPressed = skipKey.isPressed();
+
+        if (!pauseWasPressed && pauseKey.isPressed()) {
+            scanPaused = !scanPaused;
+            sendChat("[SignBot] Scanning " + (scanPaused ? "paused" : "resumed"));
+        }
+        pauseWasPressed = pauseKey.isPressed();
+
+        if (!debugWasPressed && debugKey.isPressed()) {
+            debugEnabled = !debugEnabled;
+            sendChat("[SignBot] Debug mode " + (debugEnabled ? "enabled" : "disabled"));
+        }
+        debugWasPressed = debugKey.isPressed();
+    }
+
+    // Tick logic for auto-destroy
+    public void tick() {
+        if (!destroyEnabled || signQueue.isEmpty() || client.player == null) return;
+
+        BlockPos target = signQueue.get(0);
+        double distance = client.player.getPos().distanceTo(Vec3d.ofCenter(target));
+
+        if (distance < 4.5) {
+            client.interactionManager.attackBlock(target, client.player.getHorizontalFacing());
+            log("[DESTROYED] Sign at " + target.toShortString());
+            signQueue.remove(0);
+        }
     }
 
     // Scan signs and populate queue
@@ -71,6 +123,7 @@ public class SignBot {
                         validSigns++;
                         signQueue.add(pos);
                         log("[QUEUED] Valid sign at " + posString + " — \"" + line1 + " | " + line2 + " | " + line3 + " | " + line4 + "\"");
+                        saveSign(pos, line1, line2, line3, line4);
                     }
                 }
             } catch (Exception e) {
@@ -78,8 +131,19 @@ public class SignBot {
             }
         }
 
-        scanningEnabled = false; // Auto-pause after scan
+        scanningEnabled = false;
         showSummary();
+    }
+
+    // Save sign data to file
+    private void saveSign(BlockPos pos, String l1, String l2, String l3, String l4) {
+        String line = pos.getX() + "\t" + pos.getY() + "\t" + pos.getZ() + "\t" + l1 + "\t" + l2 + "\t" + l3 + "\t" + l4;
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("signs.tsv", true))) {
+            writer.write(line);
+            writer.newLine();
+        } catch (IOException e) {
+            log("[ERROR] Failed to save sign data — " + e.getMessage());
+        }
     }
 
     // Send one Baritone command from queue
@@ -110,6 +174,7 @@ public class SignBot {
 
     // Write to log file
     private void log(String message) {
+        if (!debugEnabled && message.startsWith("[DEBUG]")) return;
         try (BufferedWriter buffer = new BufferedWriter(new FileWriter(logFilePath, true))) {
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
             buffer.write("[" + timestamp + "] " + message + "\n");
