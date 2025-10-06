@@ -18,28 +18,36 @@ public class SignBot {
     private final MinecraftClient client;
     private final String logFilePath = "signbot-log.txt";
 
+    // Feature toggles
     private boolean scanningEnabled = false;
     private boolean destroyEnabled = false;
     private boolean scanPaused = false;
     private boolean debugEnabled = false;
 
+    // Debounce state for each keybind
     private final KeybindState scanState = new KeybindState();
     private final KeybindState destroyState = new KeybindState();
-    private final KeybindState skipState = new KeybindState();
+    private final KeybindState skipState = new KeybindState();  // Modular skip debounce
     private final KeybindState pauseState = new KeybindState();
     private final KeybindState debugState = new KeybindState();
 
+    // Queue of valid signs to process
     private final List<BlockPos> signQueue = new ArrayList<>();
 
+    // Scan statistics
     private int totalSigns = 0;
     private int ignoredCodyTags = 0;
     private int blankSigns = 0;
     private int validSigns = 0;
 
+    // ✅ GUI-ready flag for skip (optional visual feedback)
+    private boolean skipTriggered = false;
+
     public SignBot(MinecraftClient client) {
         this.client = client;
     }
 
+    // ✅ Updated to use KeybindState for skip, with GUI-ready trigger flag
     public void handleInput(Keybind scanKey, Keybind destroyKey, Keybind skipKey, Keybind pauseKey, Keybind debugKey) {
         if (scanState.toggled(scanKey)) {
             scanningEnabled = !scanningEnabled;
@@ -52,8 +60,12 @@ public class SignBot {
             sendChat("[SignBot] Auto-destroy " + (destroyEnabled ? "enabled" : "disabled"));
         }
 
+        // ✅ Modular skip logic using KeybindState
         if (skipState.toggled(skipKey)) {
-            dispatchNextSign();
+            triggerSkip();
+            skipTriggered = true;
+        } else {
+            skipTriggered = false;
         }
 
         if (pauseState.toggled(pauseKey)) {
@@ -67,6 +79,12 @@ public class SignBot {
         }
     }
 
+    // ✅ Modular method for skip action (can be reused by GUI later)
+    public void triggerSkip() {
+        dispatchNextSign();
+    }
+
+    // Tick logic for auto-destroying signs when in range
     public void tick() {
         if (!destroyEnabled || signQueue.isEmpty() || client.player == null) return;
 
@@ -80,9 +98,11 @@ public class SignBot {
         }
     }
 
+    // Scan signs in the world and populate the queue
     public void scanSigns() {
         if (client.world == null || client.player == null) return;
 
+        // Reset counters and queue
         totalSigns = 0;
         ignoredCodyTags = 0;
         blankSigns = 0;
@@ -94,6 +114,7 @@ public class SignBot {
                 if (entity instanceof SignBlockEntity sign) {
                     totalSigns++;
 
+                    // Extract and trim sign text
                     String line1 = sign.getText(0, false).getString().trim();
                     String line2 = sign.getText(1, false).getString().trim();
                     String line3 = sign.getText(2, false).getString().trim();
@@ -105,6 +126,7 @@ public class SignBot {
                     BlockPos pos = sign.getPos();
                     String posString = pos.getX() + " " + pos.getY() + " " + pos.getZ();
 
+                    // Filter and log based on content
                     if (isBlank) {
                         blankSigns++;
                         log("[SKIPPED] Blank sign at " + posString);
@@ -127,6 +149,7 @@ public class SignBot {
         showSummary();
     }
 
+    // Save sign data to file in tab-delimited format
     private void saveSign(BlockPos pos, String l1, String l2, String l3, String l4) {
         String line = pos.getX() + "\t" + pos.getY() + "\t" + pos.getZ() + "\t" + l1 + "\t" + l2 + "\t" + l3 + "\t" + l4;
         try (BufferedWriter writer = new BufferedWriter(new FileWriter("signs.tsv", true))) {
@@ -137,6 +160,7 @@ public class SignBot {
         }
     }
 
+    // Send one Baritone command from queue
     public void dispatchNextSign() {
         if (client.player == null || signQueue.isEmpty()) return;
 
@@ -146,6 +170,7 @@ public class SignBot {
         log("[DISPATCHED] Sent Baritone command to " + pos.toShortString());
     }
 
+    // Show scan summary in chat
     private void showSummary() {
         sendChat("[SignBot] Scan complete: " + totalSigns + " signs detected");
         if (ignoredCodyTags > 0) {
@@ -156,10 +181,12 @@ public class SignBot {
         sendChat("[SignBot] Finished scan ✅");
     }
 
+    // Send message to in-game chat
     private void sendChat(String message) {
         client.player.sendMessage(Text.of(message), false);
     }
 
+    // Write debug or status messages to log file
     private void log(String message) {
         if (!debugEnabled && message.startsWith("[DEBUG]")) return;
         try (BufferedWriter buffer = new BufferedWriter(new FileWriter(logFilePath, true))) {
