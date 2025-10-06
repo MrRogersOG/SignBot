@@ -23,11 +23,11 @@ public class SignBot {
     private boolean scanPaused = false;
     private boolean debugEnabled = false;
 
-    private boolean scanWasPressed = false;
-    private boolean destroyWasPressed = false;
-    private boolean skipWasPressed = false;
-    private boolean pauseWasPressed = false;
-    private boolean debugWasPressed = false;
+    private final KeybindState scanState = new KeybindState();
+    private final KeybindState destroyState = new KeybindState();
+    private final KeybindState skipState = new KeybindState();
+    private final KeybindState pauseState = new KeybindState();
+    private final KeybindState debugState = new KeybindState();
 
     private final List<BlockPos> signQueue = new ArrayList<>();
 
@@ -40,40 +40,33 @@ public class SignBot {
         this.client = client;
     }
 
-    // Handle all keybinds with debounce logic
     public void handleInput(Keybind scanKey, Keybind destroyKey, Keybind skipKey, Keybind pauseKey, Keybind debugKey) {
-        if (!scanWasPressed && scanKey.isPressed()) {
+        if (scanState.toggled(scanKey)) {
             scanningEnabled = !scanningEnabled;
             sendChat("[SignBot] Scanning " + (scanningEnabled ? "enabled" : "disabled"));
             if (scanningEnabled) scanSigns();
         }
-        scanWasPressed = scanKey.isPressed();
 
-        if (!destroyWasPressed && destroyKey.isPressed()) {
+        if (destroyState.toggled(destroyKey)) {
             destroyEnabled = !destroyEnabled;
             sendChat("[SignBot] Auto-destroy " + (destroyEnabled ? "enabled" : "disabled"));
         }
-        destroyWasPressed = destroyKey.isPressed();
 
-        if (!skipWasPressed && skipKey.isPressed()) {
+        if (skipState.toggled(skipKey)) {
             dispatchNextSign();
         }
-        skipWasPressed = skipKey.isPressed();
 
-        if (!pauseWasPressed && pauseKey.isPressed()) {
+        if (pauseState.toggled(pauseKey)) {
             scanPaused = !scanPaused;
             sendChat("[SignBot] Scanning " + (scanPaused ? "paused" : "resumed"));
         }
-        pauseWasPressed = pauseKey.isPressed();
 
-        if (!debugWasPressed && debugKey.isPressed()) {
+        if (debugState.toggled(debugKey)) {
             debugEnabled = !debugEnabled;
             sendChat("[SignBot] Debug mode " + (debugEnabled ? "enabled" : "disabled"));
         }
-        debugWasPressed = debugKey.isPressed();
     }
 
-    // Tick logic for auto-destroy
     public void tick() {
         if (!destroyEnabled || signQueue.isEmpty() || client.player == null) return;
 
@@ -87,7 +80,6 @@ public class SignBot {
         }
     }
 
-    // Scan signs and populate queue
     public void scanSigns() {
         if (client.world == null || client.player == null) return;
 
@@ -135,7 +127,6 @@ public class SignBot {
         showSummary();
     }
 
-    // Save sign data to file
     private void saveSign(BlockPos pos, String l1, String l2, String l3, String l4) {
         String line = pos.getX() + "\t" + pos.getY() + "\t" + pos.getZ() + "\t" + l1 + "\t" + l2 + "\t" + l3 + "\t" + l4;
         try (BufferedWriter writer = new BufferedWriter(new FileWriter("signs.tsv", true))) {
@@ -146,7 +137,6 @@ public class SignBot {
         }
     }
 
-    // Send one Baritone command from queue
     public void dispatchNextSign() {
         if (client.player == null || signQueue.isEmpty()) return;
 
@@ -156,7 +146,6 @@ public class SignBot {
         log("[DISPATCHED] Sent Baritone command to " + pos.toShortString());
     }
 
-    // Show scan summary in chat
     private void showSummary() {
         sendChat("[SignBot] Scan complete: " + totalSigns + " signs detected");
         if (ignoredCodyTags > 0) {
@@ -167,12 +156,10 @@ public class SignBot {
         sendChat("[SignBot] Finished scan ✅");
     }
 
-    // Send message to chat
     private void sendChat(String message) {
         client.player.sendMessage(Text.of(message), false);
     }
 
-    // Write to log file
     private void log(String message) {
         if (!debugEnabled && message.startsWith("[DEBUG]")) return;
         try (BufferedWriter buffer = new BufferedWriter(new FileWriter(logFilePath, true))) {
