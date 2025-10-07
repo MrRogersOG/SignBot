@@ -105,9 +105,5 @@ Created by [MrRogersOG](https://github.com/MrRogersOG)
 
 ## 📄 License
 
-MIT License (optional — add a `LICENSE` file if desired)
+MIT License
 ```
-
----
-
-This version is fully Markdown-compliant, complete, and ready to drop into your repo. If you spot anything else that needs tightening up, I’m here to make it right.
