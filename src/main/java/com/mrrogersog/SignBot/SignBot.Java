@@ -214,7 +214,22 @@ public class SignBot {
         sendChat("[SignBot] Auto-dispatch " + (autoDispatchEnabled ? "enabled" : "disabled"));
     }
 
+    /**
+     * Displays a summary of the sign scanning operation, including total signs detected,
+     * ignored signs, blank signs skipped, and valid signs added to the queue.
+     */
     private void showSummary() {
+        // Send total signs detected message
         sendChat("[SignBot] Scan complete: " + totalSigns + " signs detected");
+        // Send message about ignored Cody tags if any were ignored
         if (ignoredCodyTags > 0) {
-            sendChat("[SignBot] " + ignoredCodyTags + " codysmile11 signs ignored
+            sendChat("[SignBot] " + ignoredCodyTags + " codysmile11 signs ignored 😎");
+        }
+        // Send message about blank signs that were skipped
+        sendChat("[SignBot] " + blankSigns + " blank signs skipped");
+        // Send message about valid signs that were added to the queue
+        sendChat("[SignBot] " + validSigns + " valid signs added to queue");
+        // Send completion message with checkmark emoji
+        sendChat("[SignBot] Finished scan ✅");
+    }
+}
