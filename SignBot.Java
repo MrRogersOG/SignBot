@@ -23,13 +23,19 @@ public class SignBot {
     private boolean destroyEnabled = false;
     private boolean scanPaused = false;
     private boolean debugEnabled = false;
+    private boolean autoDispatchEnabled = false; // [Baritone] Auto-dispatch toggle
 
     // Debounce state for each keybind
     private final KeybindState scanState = new KeybindState();
     private final KeybindState destroyState = new KeybindState();
-    private final KeybindState skipState = new KeybindState();  // Modular skip debounce
+    private final KeybindState skipState = new KeybindState();
     private final KeybindState pauseState = new KeybindState();
     private final KeybindState debugState = new KeybindState();
+    private final KeybindState dispatchState = new KeybindState();     // [Baritone]
+    private final KeybindState deferState = new KeybindState();        // [Baritone]
+    private final KeybindState cancelState = new KeybindState();       // [Baritone]
+    private final KeybindState clearState = new KeybindState();        // [Baritone]
+    private final KeybindState autoDispatchState = new KeybindState(); // [Baritone]
 
     // Queue of valid signs to process
     private final List<BlockPos> signQueue = new ArrayList<>();
@@ -40,15 +46,16 @@ public class SignBot {
     private int blankSigns = 0;
     private int validSigns = 0;
 
-    // ✅ GUI-ready flag for skip (optional visual feedback)
+    // GUI-ready flag for skip
     private boolean skipTriggered = false;
 
     public SignBot(MinecraftClient client) {
         this.client = client;
     }
 
-    // ✅ Updated to use KeybindState for skip, with GUI-ready trigger flag
-    public void handleInput(Keybind scanKey, Keybind destroyKey, Keybind skipKey, Keybind pauseKey, Keybind debugKey) {
+    public void handleInput(Keybind scanKey, Keybind destroyKey, Keybind skipKey, Keybind pauseKey, Keybind debugKey,
+                            Keybind dispatchKey, Keybind deferKey, Keybind cancelKey, Keybind clearKey, Keybind autoDispatchKey) {
+
         if (scanState.toggled(scanKey)) {
             scanningEnabled = !scanningEnabled;
             sendChat("[SignBot] Scanning " + (scanningEnabled ? "enabled" : "disabled"));
@@ -60,9 +67,8 @@ public class SignBot {
             sendChat("[SignBot] Auto-destroy " + (destroyEnabled ? "enabled" : "disabled"));
         }
 
-        // ✅ Modular skip logic using KeybindState
         if (skipState.toggled(skipKey)) {
-            triggerSkip();
+            skipCurrentSign("Manual skip");
             skipTriggered = true;
         } else {
             skipTriggered = false;
@@ -77,32 +83,35 @@ public class SignBot {
             debugEnabled = !debugEnabled;
             sendChat("[SignBot] Debug mode " + (debugEnabled ? "enabled" : "disabled"));
         }
+
+        // [Baritone] Keybinds
+        if (dispatchState.toggled(dispatchKey)) dispatchNextSign();
+        if (deferState.toggled(deferKey)) deferCurrentSign();
+        if (cancelState.toggled(cancelKey)) cancelPath();
+        if (clearState.toggled(clearKey)) clearQueue();
+        if (autoDispatchState.toggled(autoDispatchKey)) toggleAutoDispatch();
     }
 
-    // ✅ Modular method for skip action (can be reused by GUI later)
-    public void triggerSkip() {
-        dispatchNextSign();
-    }
-
-    // Tick logic for auto-destroying signs when in range
     public void tick() {
-        if (!destroyEnabled || signQueue.isEmpty() || client.player == null) return;
+        if (destroyEnabled && !signQueue.isEmpty() && client.player != null) {
+            BlockPos target = signQueue.get(0);
+            double distance = client.player.getPos().distanceTo(Vec3d.ofCenter(target));
+            if (distance < 4.5) {
+                client.interactionManager.attackBlock(target, client.player.getHorizontalFacing());
+                log("[DESTROYED] Sign at " + target.toShortString());
+                signQueue.remove(0);
+            }
+        }
 
-        BlockPos target = signQueue.get(0);
-        double distance = client.player.getPos().distanceTo(Vec3d.ofCenter(target));
-
-        if (distance < 4.5) {
-            client.interactionManager.attackBlock(target, client.player.getHorizontalFacing());
-            log("[DESTROYED] Sign at " + target.toShortString());
-            signQueue.remove(0);
+        // [Baritone] Auto-dispatch loop
+        if (autoDispatchEnabled && !BaritoneHelper.isPathing() && !signQueue.isEmpty()) {
+            dispatchNextSign();
         }
     }
 
-    // Scan signs in the world and populate the queue
     public void scanSigns() {
         if (client.world == null || client.player == null) return;
 
-        // Reset counters and queue
         totalSigns = 0;
         ignoredCodyTags = 0;
         blankSigns = 0;
@@ -114,7 +123,6 @@ public class SignBot {
                 if (entity instanceof SignBlockEntity sign) {
                     totalSigns++;
 
-                    // Extract and trim sign text
                     String line1 = sign.getText(0, false).getString().trim();
                     String line2 = sign.getText(1, false).getString().trim();
                     String line3 = sign.getText(2, false).getString().trim();
@@ -126,7 +134,6 @@ public class SignBot {
                     BlockPos pos = sign.getPos();
                     String posString = pos.getX() + " " + pos.getY() + " " + pos.getZ();
 
-                    // Filter and log based on content
                     if (isBlank) {
                         blankSigns++;
                         log("[SKIPPED] Blank sign at " + posString);
@@ -149,7 +156,6 @@ public class SignBot {
         showSummary();
     }
 
-    // Save sign data to file in tab-delimited format
     private void saveSign(BlockPos pos, String l1, String l2, String l3, String l4) {
         String line = pos.getX() + "\t" + pos.getY() + "\t" + pos.getZ() + "\t" + l1 + "\t" + l2 + "\t" + l3 + "\t" + l4;
         try (BufferedWriter writer = new BufferedWriter(new FileWriter("signs.tsv", true))) {
@@ -160,40 +166,55 @@ public class SignBot {
         }
     }
 
-    // Send one Baritone command from queue
+    // [Baritone] Dispatch next sign from queue
     public void dispatchNextSign() {
         if (client.player == null || signQueue.isEmpty()) return;
-
         BlockPos pos = signQueue.remove(0);
-        String command = "#goto " + pos.getX() + " " + pos.getY() + " " + pos.getZ();
-        client.player.sendChatMessage(command);
-        log("[DISPATCHED] Sent Baritone command to " + pos.toShortString());
+        BaritoneHelper.goTo(pos);
+        log("[DISPATCHED] Sent Baritone goal to " + pos.toShortString());
     }
 
-    // Show scan summary in chat
+    // [Baritone] Skip current sign permanently
+    public void skipCurrentSign(String reason) {
+        if (!signQueue.isEmpty()) {
+            BlockPos skipped = signQueue.remove(0);
+            BaritoneHelper.cancelPath();
+            log("[SKIPPED] " + reason + " at " + skipped.toShortString());
+            dispatchNextSign();
+        }
+    }
+
+    // [Baritone] Defer current sign to back of queue
+    public void deferCurrentSign() {
+        if (!signQueue.isEmpty()) {
+            BlockPos deferred = signQueue.remove(0);
+            signQueue.add(deferred);
+            BaritoneHelper.cancelPath();
+            log("[DEFERRED] Sign moved to back of queue: " + deferred.toShortString());
+            dispatchNextSign();
+        }
+    }
+
+    // [Baritone] Cancel current path
+    public void cancelPath() {
+        BaritoneHelper.cancelPath();
+        log("[CANCELLED] Baritone pathing canceled");
+    }
+
+    // [Baritone] Clear queue and cancel path
+    public void clearQueue() {
+        BaritoneHelper.cancelPath();
+        signQueue.clear();
+        log("[CLEARED] Sign queue emptied");
+    }
+
+    // [Baritone] Toggle auto-dispatch
+    public void toggleAutoDispatch() {
+        autoDispatchEnabled = !autoDispatchEnabled;
+        sendChat("[SignBot] Auto-dispatch " + (autoDispatchEnabled ? "enabled" : "disabled"));
+    }
+
     private void showSummary() {
         sendChat("[SignBot] Scan complete: " + totalSigns + " signs detected");
         if (ignoredCodyTags > 0) {
-            sendChat("[SignBot] " + ignoredCodyTags + " codysmile11 signs ignored 😎");
-        }
-        sendChat("[SignBot] " + blankSigns + " blank signs skipped");
-        sendChat("[SignBot] " + validSigns + " valid signs added to queue");
-        sendChat("[SignBot] Finished scan ✅");
-    }
-
-    // Send message to in-game chat
-    private void sendChat(String message) {
-        client.player.sendMessage(Text.of(message), false);
-    }
-
-    // Write debug or status messages to log file
-    private void log(String message) {
-        if (!debugEnabled && message.startsWith("[DEBUG]")) return;
-        try (BufferedWriter buffer = new BufferedWriter(new FileWriter(logFilePath, true))) {
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            buffer.write("[" + timestamp + "] " + message + "\n");
-        } catch (IOException e) {
-            System.err.println("SignBot failed to write to log file: " + e.getMessage());
-        }
-    }
-}
+            sendChat("[SignBot] " + ignoredCodyTags + " codysmile11 signs ignored
