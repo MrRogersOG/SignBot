@@ -1,0 +1,22 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.mrrogersog.signbot'
+version = '1.0.0'
+archivesBaseName = 'signbot'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'com.github.MeteorDevelopment:meteor-client:master-SNAPSHOT'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
