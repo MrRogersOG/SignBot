@@ -13,24 +13,29 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * A Minecraft bot designed to automatically detect, process, and interact with signs in the game.
+ * This bot can scan for signs, filter them based on content, queue them for processing,
+ * and integrate with Baritone pathfinding for navigation.
+ */
 public class SignBot {
 
-    private final MinecraftClient client;
-    private final String logFilePath = "signbot-log.txt";
+    private final MinecraftClient client; // Minecraft client instance for game interaction
+    private final String logFilePath = "signbot-log.txt"; // Path to the log file
 
-    // Feature toggles
-    private boolean scanningEnabled = false;
-    private boolean destroyEnabled = false;
-    private boolean scanPaused = false;
-    private boolean debugEnabled = false;
-    private boolean autoDispatchEnabled = false; // [Baritone] Auto-dispatch toggle
+    // Feature toggles - boolean flags for various bot functionalities
+    private boolean scanningEnabled = false; // Controls whether sign scanning is active
+    private boolean destroyEnabled = false; // Controls whether automatic sign destruction is active
+    private boolean scanPaused = false; // Controls whether scanning is paused
+    private boolean debugEnabled = false; // Controls debug mode for additional logging
+    private boolean autoDispatchEnabled = false; // [Baritone] Auto-dispatch toggle for automatic pathing
 
-    // Debounce state for each keybind
-    private final KeybindState scanState = new KeybindState();
-    private final KeybindState destroyState = new KeybindState();
-    private final KeybindState skipState = new KeybindState();
-    private final KeybindState pauseState = new KeybindState();
-    private final KeybindState debugState = new KeybindState();
+    // Debounce state for each keybind - prevents rapid repeated key presses
+    private final KeybindState scanState = new KeybindState(); // State for scanning toggle keybind
+    private final KeybindState destroyState = new KeybindState(); // State for destruction toggle keybind
+    private final KeybindState skipState = new KeybindState(); // State for skip current sign keybind
+    private final KeybindState pauseState = new KeybindState(); // State for pause/resume keybind
+    private final KeybindState debugState = new KeybindState(); // State for debug mode toggle keybind
     private final KeybindState dispatchState = new KeybindState();     // [Baritone]
     private final KeybindState deferState = new KeybindState();        // [Baritone]
     private final KeybindState cancelState = new KeybindState();       // [Baritone]
