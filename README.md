@@ -1,5 +1,9 @@
 # SignBot 🪧🤖
 
+Deprecated Code.
+My code didn't meet the standards for Meteor Client, so I started over with Tabula Rasa below. Wtih Tabula Rasa I can do more then just search for signs. If someone want's to copy SignBot and do what they want with it, cool, have at it.
+https://github.com/MrRogersOG/TabulaRasa
+
 **SignBot** is a Minecraft automation tool designed to scan signs in loaded chunks, filter out unwanted ones, and send Baritone commands to visit valid sign locations. It’s built for Fabric mod environments and optimized for modular control and persistent logging.
 
 ---
